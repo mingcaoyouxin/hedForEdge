@@ -100,7 +100,7 @@ class HEDTrainer():
                 summary, error = session.run([self.model.merged_summary, self.model.error], feed_dict={self.model.images: im, self.model.edgemaps: em})
                 if idx % 1000 == 0:
                     self.model.val_writer.add_summary(summary, idx)
-                self.io.print_info('[{}/{}] VALIDATION error : {}'.format(idx, self.cfgs['max_iterations'], error))
+                self.io.print_info('[{}/{}] VALI  DATION error : {}'.format(idx, self.cfgs['max_iterations'], error))
             '''
             if idx == self.cfgs['max_iterations'] - 1:
                 save_dir = self.saveDir

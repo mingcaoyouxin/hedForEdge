@@ -182,7 +182,7 @@ class Vgg16():
         self.loss = 0
         self.io.print_warning('Deep supervision application set to {}'.format(self.cfgs['deep_supervision']))
         for idx, b in enumerate(self.side_outputs):
-            tf.summary.image('output_{}'.format(idx), b)
+            #tf.summary.image('output_{}'.format(idx), b)
             output = tf.nn.sigmoid(b, name='output_{}'.format(idx))
             cost = sigmoid_cross_entropy_balanced(b, self.edgemaps, name='cross_entropy{}'.format(idx))
 
