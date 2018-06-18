@@ -25,7 +25,12 @@ class Vgg16():
         self.images = tf.placeholder(tf.float32, [None, self.cfgs[run]['image_height'], self.cfgs[run]['image_width'], self.cfgs[run]['n_channels']],name="inputlayer")
         self.edgemaps = tf.placeholder(tf.float32, [None, self.cfgs[run]['image_height'], self.cfgs[run]['image_width'], 1])
 
+        self.weights_regularizer = None
+        self.filter_initializer = tf.contrib.layers.xavier_initializer()
+
         self.define_model()
+
+
 
     def define_model(self):
 
@@ -38,49 +43,71 @@ class Vgg16():
 
         self.conv1_1 = self.conv_layer_vgg(self.images, "conv1_1")
         self.conv1_2 = self.conv_layer_vgg(self.conv1_1, "conv1_2")
-        self.side_1 = self.side_layer(self.conv1_2, "side_1", 1)
-        self.pool1 = self.max_pool(self.conv1_2, 'pool1')
-
+        with tf.variable_scope('dsn1'):
+            #self.side_1 = self.side_layer(self.conv1_2, "side_1", 1)
+            self.side_1  = self.dsn_1x1_conv2d(self.conv1_2, 1)
+        
+        self.pool1   = self.max_pool(self.conv1_2, 'pool1')
         self.io.print_info('Added CONV-BLOCK-1+SIDE-1')
+
 
         self.conv2_1 = self.conv_layer_vgg(self.pool1, "conv2_1")
         self.conv2_2 = self.conv_layer_vgg(self.conv2_1, "conv2_2")
-        self.side_2 = self.side_layer(self.conv2_2, "side_2", 2)
-        self.pool2 = self.max_pool(self.conv2_2, 'pool2')
+        with tf.variable_scope('dsn2'):
+            #self.side_2 = self.side_layer(self.conv2_2, "side_2", 2)
+            self.side_2  = self.dsn_1x1_conv2d(self.conv2_2, 1)
+            self.side_2  = self.dsn_deconv2d_with_upsample_factor(self.side_2, 1, upsample_factor = 2)
 
+        self.pool2 = self.max_pool(self.conv2_2, 'pool2')
         self.io.print_info('Added CONV-BLOCK-2+SIDE-2')
+
 
         self.conv3_1 = self.conv_layer_vgg(self.pool2, "conv3_1")
         self.conv3_2 = self.conv_layer_vgg(self.conv3_1, "conv3_2")
         self.conv3_3 = self.conv_layer_vgg(self.conv3_2, "conv3_3")
-        self.side_3 = self.side_layer(self.conv3_3, "side_3", 4)
-        self.pool3 = self.max_pool(self.conv3_3, 'pool3')
+        with tf.variable_scope('dsn3'):
+            #self.side_3 = self.side_layer(self.conv3_3, "side_3", 4)
+            self.side_3  = self.dsn_1x1_conv2d(self.conv3_3, 1)
+            self.side_3  = self.dsn_deconv2d_with_upsample_factor(self.side_3, 1, upsample_factor = 4)
+        
+        self.pool3   = self.max_pool(self.conv3_3, 'pool3')
 
         self.io.print_info('Added CONV-BLOCK-3+SIDE-3')
+
 
         self.conv4_1 = self.conv_layer_vgg(self.pool3, "conv4_1")
         self.conv4_2 = self.conv_layer_vgg(self.conv4_1, "conv4_2")
         self.conv4_3 = self.conv_layer_vgg(self.conv4_2, "conv4_3")
-        self.side_4 = self.side_layer(self.conv4_3, "side_4", 8)
-        self.pool4 = self.max_pool(self.conv4_3, 'pool4')
+        with tf.variable_scope('dsn4'):
+            #self.side_4 = self.side_layer(self.conv4_3, "side_4", 8)
+            self.side_4  = self.dsn_1x1_conv2d(self.conv4_3, 1)
+            self.side_4  = self.dsn_deconv2d_with_upsample_factor(self.side_4, 1, upsample_factor = 8)
 
+        self.pool4   = self.max_pool(self.conv4_3, 'pool4')
         self.io.print_info('Added CONV-BLOCK-4+SIDE-4')
+
 
         self.conv5_1 = self.conv_layer_vgg(self.pool4, "conv5_1")
         self.conv5_2 = self.conv_layer_vgg(self.conv5_1, "conv5_2")
         self.conv5_3 = self.conv_layer_vgg(self.conv5_2, "conv5_3")
-        self.side_5 = self.side_layer(self.conv5_3, "side_5", 16)
+        with tf.variable_scope('dsn5'):
+            #self.side_5 = self.side_layer(self.conv5_3, "side_5", 16)
+            self.side_5  = self.dsn_1x1_conv2d(self.conv5_3, 1)
+            self.side_5  = self.dsn_deconv2d_with_upsample_factor(self.side_5, 1, upsample_factor = 16)
+
 
         self.io.print_info('Added CONV-BLOCK-5+SIDE-5')
-
         self.side_outputs = [self.side_1, self.side_2, self.side_3, self.side_4, self.side_5]
 
         w_shape = [1, 1, len(self.side_outputs), 1]
-        self.fuse = self.conv_layer(tf.concat(self.side_outputs, axis=3),
-                                    w_shape, name='fuse_1', use_bias=False,
-                                    w_init=tf.constant_initializer(0.2))
-
-        self.io.print_info('Added FUSE layer')
+       
+        
+        with tf.variable_scope('fuse'):
+            #self.fuse = self.conv_layer(tf.concat(self.side_outputs, axis=3),
+            #                            w_shape, name='fuse_1', use_bias=False,
+            #                            w_init=tf.constant_initializer(0.2))
+            self.fuse = tf.concat([self.side_1, self.side_2, self.side_3, self.side_4, self.side_5], 3)
+            self.fuse = self.output_1x1_conv2d(self.fuse , 1)
 
         # complete output maps from side layer and fuse layers
         self.outputs = self.side_outputs + [self.fuse]
@@ -88,7 +115,60 @@ class Vgg16():
         self.data_dict = None
         self.io.print_info("Build model finished: {:.4f}s".format(time.time() - start_time))
 
-    
+    def dsn_1x1_conv2d(self,inputs, filters):
+        use_bias = True
+        #if const.use_batch_norm:
+        #    use_bias = False
+
+        kernel_size = [1, 1]
+        outputs = tf.layers.conv2d(inputs,
+                                   filters,
+                                   kernel_size, 
+                                   padding='same', 
+                                   activation=None, ## no activation
+                                   use_bias=use_bias, 
+                                   kernel_initializer=self.filter_initializer,
+                                   kernel_regularizer=self.weights_regularizer)
+
+        #if const.use_batch_norm:
+        #    outputs = tf.layers.batch_normalization(outputs, training=is_training)
+        ## no activation
+        return outputs
+
+    def output_1x1_conv2d(self,inputs, filters):
+        kernel_size = [1, 1]
+        outputs = tf.layers.conv2d(inputs,
+                                   filters,
+                                   kernel_size, 
+                                   padding='same', 
+                                   activation=None, ## no activation
+                                   use_bias=True, ## use bias
+                                   kernel_initializer=self.filter_initializer,
+                                   kernel_regularizer=self.weights_regularizer)
+
+        ## no batch normalization
+        ## no activation
+
+        return outputs
+
+    def dsn_deconv2d_with_upsample_factor(self,inputs, filters, upsample_factor):
+        ## https://github.com/s9xie/hed/blob/master/examples/hed/train_val.prototxt
+        ## 从这个原版代码里看，是这样计算 kernel_size 的
+        kernel_size = [2 * upsample_factor, 2 * upsample_factor]
+        outputs = tf.layers.conv2d_transpose(inputs,
+                                             filters, 
+                                             kernel_size, 
+                                             strides=(upsample_factor, upsample_factor), 
+                                             padding='same', 
+                                             activation=None, ## no activation
+                                             use_bias=True, ## use bias
+                                             kernel_initializer=self.filter_initializer,
+                                             kernel_regularizer=self.weights_regularizer)
+
+        ## 概念上来说，deconv2d 已经是最后的输出 layer 了，只不过最后还有一步 1x1 的 conv2d 把 5 个 deconv2d 的输出再融合到一起
+        ## 所以不需要再使用 batch normalization 了
+        return outputs
+        
 
 
     def max_pool(self, bottom, name):
